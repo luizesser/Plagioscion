@@ -1,0 +1,1495 @@
+---
+title: "P. squamosissimus"
+author: "Vitor"
+output:
+  html_document:
+    df_print: paged
+    number_sections: TRUE    # seções numeradas automaticamente
+    toc: true                # construir o sumário
+    toc_float: true          # colocar o sumário flutuante no canto superior esquerdo
+    toc_depth: 3             # o sumário conterá três níveis de profundidade: capitulo, seção e subseção
+    theme: cerulean          # tema de cores estilo de fonte, use o "united" para um tema monocromico
+    code_folding: hide       # inclui botão para mostrar/esconder código fonte
+    fig_width: 8             # largura padrão das figuras
+editor_options: 
+  chunk_output_type: inline
+---
+<style>
+div.main-container {
+    width: 80%;
+    max-width: unset;
+}
+</style>
+
+```{r biblio_e_configuracoes, message=F, warning=F, include=F, results="hide"}
+source(file = "config/script_funcoes_auxiliares.R")
+```
+
+# Arquivos e pastas de entrada e saída
+
+```{r descricao_arquivos, eval=T, include=T}
+# Aqui são definidos os nomes dos arquivos e pastas consumidos como entrada e saída do script. 
+
+# Os arquivos de entrada devem sempre ficar em uma subpasta dentro projeto
+# chamada "entrada". Dentro da pasta "entrada" pode-se criar livremente
+# subpastas para organização do projeto, desde que elas sejam indicadas
+# corretamente aqui nesta parte do script.
+#
+# Os arquivos produzidos devem  sempre ficar em uma subpasta dentro do projeto
+# chamada "saida". Dentro da pasta "saida" NÃO pode-se criar livremente
+# subpastas para organização do projeto.
+#
+# Lembre-se que alguns arquivos são produções intermediárias do script, ou seja,
+# não são a predição da distribuição da espécie, mas são usados para tal, como
+# por exemplo, a grid da área do estudo. Quando um arquivo é produzido ele é
+# usado subsequentemente em outras partes do script, mesmo que em execuções
+# futuras. Assim sendo, quando você desejar que um arquivo seja produzido
+# novamente, por exemplo, quando a área de estudo mudou ou variáveis dos modelos
+# de predição tenham sido alteradas, basta apenas apagar a pasta em que os
+# arquivos foram automaticamente produzidos pelo script. Em uma execução futura
+# tais arquivos serão produzidos novamente pelos script.
+
+nome_shapefile_area_estudo <- here("entrada", "shape_area_estudo", "SA_Stream[5880].shp")
+nome_raster_dados_SRTM <- here("entrada", "raster_SRTM", "SRTM_AS_250[5880].tif")
+pasta_dados_presente <- here("entrada", "raster_variaveis_bio_presente")
+pasta_dados_futuro <- here("entrada", "raster_variaveis_bio_futuro")
+arquivo_ocorrencias_especie <- here("entrada", "nativa.csv")
+
+
+nome_shapefile_grid_estudo <- here("saida", "shape_grid_estudo_adequado", "Grid_25k_6933.shp")
+nome_shapefile_SRTM <- here("saida", "shape_SRTM_escalonado", "SRTM_25k_6933.shp")
+nome_shapefile_presente <- here("saida", "shape_variaveis_bio_presente_escalonados", "wc2.1_bio_5m_01_25k_6933.shp")
+pasta_shapefiles_futuro <- here("saida", "shape_variaveis_bio_futuro_escalonados")
+nome_shapefile_matriz_pa <- here("saida", "shape_matriz_pa", "species_25k_6933.shp")
+arquivo_modelos_treinados <- here("saida", "modelos_treinados", "modelos_treinados.sdm")
+arquivo_distr_esp_freq <- here("saida", "distr_especie_presente", "distr_esp_freq.txt")
+arquivo_distr_esp_pa <- here("saida", "distr_especie_presente", "distr_esp_pa.txt")
+pasta_distribuicao_futuro <- here("saida", "distr_especie_futuro") 
+
+if (!dir_exists(here("saida"))){
+  dir_create(here("saida"))
+}
+```
+
+# Infomações e Dicas
+
+Aqui vai um *checklist* para cada novo estudo:
+    1. Confira se o arquivo shapefile (polígonos ou linhas) com a área de estudo está em uma pasta dentro da pasta "entrada";
+    2. Confira o nome do arquivo shapefile e altere a variável nome_shapefile_area_estudo, caso necessário;
+    3. Confira se o arquivo raster com SRTM está em uma pasta dentro da pasta "entrada";
+    4. Confira o nome do arquivo raster SRTM e altere a variável nome_raster_dados_SRTM, caso necessário;
+    5. Confira se os arquivos raster com as variáveis bio do presente estão em uma pasta dentro na pasta "entrada";
+    6. Confira o nome da pasta com os arquivos raster das variáveis bio do presente e altere a variável pasta_dados_presente, caso necessário;
+    7. Confira se os arquivos raster com as variáveis bio do futuro estão em uma pasta dentro na pasta "entrada";
+    8. Confira o nome da pasta com os arquivos raster das variáveis bio do futuro e altere a variável pasta_dados_futuro, caso necessário;
+    9. Verifique e altere, caso necessário, os nomes dos shapefiles na pasta saída de acordo com o tamanho das células da grid e tipo de projeção -- nome_shapefile_grid_estudo, nome_shapefile_SRTM, nome_shapefile_presente, nome_shapefile_matriz_pa; 
+    10. Verifique e altere, caso necessário, o sistema de projeção de rasters e shapefiles em que o estudo será feito, por meio da variável projecao_desejada;
+        - Não importa o tipo de projeção em que os rasters e shapefiles estão, eles serão automaticamente transformados;
+    11. Verifique e altere, caso necessário, o tamanho das células da grid, por meio da variáveis altura e largura
+    12. Confira se o arquivo (csv) com as ocorrências está na pasta "entrada" e atende às seguintes características:
+        - Ter apenas três colunas com os seguintes nomes e na seguinte ordem: species,	longitude,	latitude
+      - Conter o nome de apenas uma espécie na coluna species
+    13. Confira o nome do arquivo (csv) com as ocorrências e altere a variável arquivo_ocorrencias_especie, caso necessário;
+    14. Confira se o nome da espécie, que está na coluna species do arquivo (csv) com as ocorrências, é o mesmo daquele que está na variável nome_especie e altere, caso necessário;
+    15. Verifique e altere, caso necessário, o sistema de projeção das ocorrências, e altere a variável projecao_dados_ocorrencia, caso necessário;
+        - Lembre-se que o sistema de projeção dos pontos de ocorrência será alterado automaticamente para coincidir com o sistema de projeção definido na variável projecao_desejada.
+    
+
+Informações sobre a geração de arquivos:
+    1. Confira atentamente as coordenadas dos pontos de ocorrência, é comum faltar pontuação como a virgula.
+    2. A grid é gerada uma única vez com base na área de estudo, no sistema de projeção da área de estudo e no tamanho das células da grid. Então, caso uma dessas coisas mude é necessário apagar a grid que está na pasta "saída", de acordo com o nome de arquivo que está na variável nome_shapefile_grid_estudo.
+    3. As variáves bio do presente e do futuro reescalonadas, bem como SRTM, são gerados uma única vez a partir da grid. Caso a grid seja alterada, é necessário apagar arquivos e pastas que estão na pasta "saída", de acordo com os nomes que estão nas variáveis nome_shapefile_SRTM, nome_shapefile_presente e pasta_shapefiles_futuro.
+    4. A matriz de presença/ausência é gerada uma única vez a partir da grid. Caso a grid seja alterada, é necessário apagar arquivos de acordo com o nome que está na varíavel nome_shapefile_matriz_pa.
+
+Após a geração da grid de estudo e do reescalonamento do SRTM e das variáveis bio no presente e no futuro, uma dica para economizar espaço no HD de sua máquina, uma vez que rasters são arquivos grandes, é apagar os rasters do SRTM e das variáveis bio do presente e do futuro. 
+  
+# O geoprocessamento do estudo
+
+## A área de estudo
+O mapa da área de estudo bem como a projeção do mapa anotada no shapefile são mostrados a seguir:
+
+```{r carregar_e_mostrar_shape_entrada, eval=T, include=T}
+# Esse pedaço de código recebe como entrada o nome do arquivo com shapefile da
+# área de estudo, o nome do shapefile com a grid de estudo e, como resultado, carrega o shapefile da área de estudo.
+# Adicionalmente, o mapa da área de estudo é mostrado e também a projeção
+# contida no shapefile. 
+#
+# Variáveis de entrada: nome_shapefile_area_estudo
+# Variáveis de saída: shapefile_area_estudo
+
+if (!file_exists(nome_shapefile_grid_estudo)){
+  if (!file_exists(nome_shapefile_area_estudo)) {
+    stop("Não existe shapefile da área de estudo nem da grid de estudo, impossível continuar! Verifique os nomes dos arquivos nas pastas e no script.")
+  }
+}
+
+shapefile_area_estudo <- readOGR(nome_shapefile_area_estudo, verbose = FALSE, GDAL1_integer64_policy = T)
+
+# Algumas vezes o arquivo vem com pequenos problemas nos poligonos, que são
+# resolvidos, na maioria dos casos, pelo uso da função `gBuffer`. Aplicável
+# apenas nos poligonos (SpatialPolygnsDataFrame), não em linhas ou pontos.
+if (class(shapefile_area_estudo) =="SpatialPolygonsDataFrame"){
+  shapefile_area_estudo <- gBuffer(shapefile_area_estudo, byid=TRUE, width=0)
+}
+
+
+mapa_tmp <- ggplot() + 
+              geom_path(data =  fortify(shapefile_area_estudo),
+                           aes(x = long, y = lat, group = group), 
+                           colour = "black") + 
+              coord_equal() +
+              scale_x_continuous(labels = comma) +
+              scale_y_continuous(labels = comma)
+
+# Caso você deseje um mapa com maior interatividade, por exemplo, com zoom, use
+# a função ggplotly(mapa_tmp) ao invés da função plot(mapa_tmp). A função
+# ggplotly permite maior interatividade, mas é mais lenta. Se vocẽ desejar ainda
+# mais interatividade, use a função mapview(shapefile_area_estudo). No entanto,
+# a função mapview não é renderizada em um documento markdown, ela mostra um
+# mapa interativo no console do RStudio. Outro ponto é que a função mapview() é
+# aplicada sobre um shapefile ou sobre um raster, não sobre um gráfico gerado
+# pelo ggplot.
+mapa_tmp
+
+# Projeção do mapa
+crs(shapefile_area_estudo)
+```
+
+Dependendo da projeção desejada, deve-se reprojetar o shape. 
+```{r reprojetar_shape_entrada, eval=T, include=T}
+# Esse pedaço de código recebe duas entradas: uma string que representa a nova
+# projeção desejada do mapa; e, o shapefile da área de estudo. Como resultado, é
+# produzido um novo shapefile reprojetado. Adicionalmente, são mostrados o mapa
+# e a nova projeção.
+#
+# Variáveis de entrada: shapefile_area_estudo,projecao_desejada 
+# Variáveis de saída: shapefile_area_estudo
+
+projecao_desejada <- "+init=epsg:6933"
+
+if (!compareCRS(crs(shapefile_area_estudo), CRS(projecao_desejada))){
+  shapefile_area_estudo <- spTransform(shapefile_area_estudo, CRS(projecao_desejada))
+
+  mapa_tmp <- ggplot() + 
+                  geom_path(data = fortify(shapefile_area_estudo),
+                               aes(x = long, y = lat, group = group), 
+                               colour = "black") + 
+                  coord_equal() +
+                  scale_x_continuous(labels = comma) +
+                  scale_y_continuous(labels = comma)
+}             
+mapa_tmp
+
+# Projeção do mapa
+crs(shapefile_area_estudo)
+```
+
+Em alguns casos algumas áreas de tamanho muito pequeno devem ser removidas. Para tanto, os poligonos devem ser desagregados e apenas os maiores que uma área mínima desejada são mantidos. Deve-se lembrar que a unidade de medida da área deve obedecer ao tipo de projeção, em metros ou em graus.
+
+```{r remover_areas_pequenas, eval=T, include=T}
+# Esse pedaço do código recebe duas entradas: um tamanho mínimo de área a ser
+# mantida no mapa; e, o shapefile da área de estudo. Como resultado, é produzido
+# um shapefile da área de estudo com áreas territoriais maiores ou iguais à área
+# mínima desejada. Adicionalmente, um mapa da área de estudo com áreas adequadas é mostrado.
+# Deve-se lembrar que a unidade usada # deve obedecer o tipo de projeto (metros
+# ou graus).
+#
+# Variáveis de entrada: shapefile_area_estudo, tamanho_area_limite 
+# Variáveis de saída: shapefile_area_estudo
+
+tamanho_area_limite <- 10000 * 10000
+
+shapefile_area_estudo <- shapefile_area_estudo %>% 
+  areas_greater_than(tamanho_area_limite)
+
+ggplot() + 
+      geom_path(data = fortify(shapefile_area_estudo),
+                   aes(x = long, y = lat, group = group), 
+                   colour = "black") + 
+      coord_equal() +
+      scale_x_continuous(labels = comma) +
+      scale_y_continuous(labels = comma)
+
+```
+
+## A grid de estudo
+
+Para criar uma grid sobre o shapefile da área de estudo, usaremos um raster com a mesma extensão da área do estudo, considerando a projeção adequada (`crs`) e o tamanho de célula desejado (largura e altura em graus ou metros). Por garantia, a grid é estendida um pouco para cobrir toda a área de estudo. A área pode, obviamente, ter características diferentes. Por exemplo, caso o estudo seja sobre espécies aquáticas, a grid deve ser cortada de acordo com as "linhas" que representam os rios. Caso a espécie estudada seja terrestre, a grid deve ser cortada de acordo com o polígono -- ou polígonos -- que representam a área de estudo. Os centróides das células também deve ser calculado.
+
+```{r construcao_grid_estudo, eval=T, include=T}
+# Esse pedaço do código recebe como entrada: a largura da célula; a altura da
+# célula; o nome do arquivo do shapefile com a grid de estudo; os nomes das
+# variáveis contidas no shapefile que se deseja manter; o shapefile da área de
+# estudo; e, o nome do arquivo me que a grid será salva depois de gerada. É
+# verificado se a grid da área de estudo já existe, por meio do nome do arquivo
+# do shapefile da grid de estudo. Caso a grid exista, o shapefile correspondente
+# é simplesmente carregado.
+#
+# Caso a grid não exista, uma grid é gerada a partir do shapefile da área de
+# estudo, com o tamanho das células definido pela altura e largura desejadas.
+# Deve-se lembrar que a unidade usada deve obedecer o tipo de projeto (metros ou
+# graus). Então, esse pedaço de código produz dois resultados: o shapefile com a
+# grid de estudo; e, caso ainda não exista o arquivo, o shapefile é gravado em
+# disco de acordo com o nome de arquivo estabelecido.
+#
+# Os nomes das variáveis contidas no shapefile são padronizados em minúsculo e
+# apenas aquelas variáveis desejadas são mantidas.
+#
+# Os centróides das células são também calculados.
+#
+# Adicionalmente um mapa é apresentado com a grid sobre a área de estudo e, também, 
+#
+# Variáveis de entrada: shapefile_area_estudo, nome_shapefile_grid_estudo, largura, altura, nomes_variaveis_grid
+# Variáveis de saída: shapefile_grid_estudo, "arquivo com a grid de estudo"
+
+largura = 25000
+altura = 25000
+nomes_variaveis_grid <-  c("frmdn_flow", "strorder")
+  
+if (!file_exists(nome_shapefile_grid_estudo)){
+  shapefile_grid_estudo <- shapefile_area_estudo %>% 
+    make_grid(largura, altura, nomes_variaveis_grid)
+  
+  shapefile_grid_estudo@data <- shapefile_grid_estudo@data %>% 
+    bind_cols(
+        shapefile_grid_estudo %>% 
+          gCentroid(byid = T) %>% 
+          slot("coords") %>% 
+          as.data.frame()
+      )
+  
+  dir_create(path_dir(nome_shapefile_grid_estudo))
+  shapefile_grid_estudo %>% writeOGR(
+      dsn = nome_shapefile_grid_estudo, 
+      layer=".", 
+      driver="ESRI Shapefile"
+    )
+} else {
+  shapefile_grid_estudo <- readOGR(nome_shapefile_grid_estudo, verbose = FALSE, GDAL1_integer64_policy = T)
+}
+ggplotly(ggplot() + 
+            geom_path(data = fortify(shapefile_area_estudo),
+                         aes(x = long, y = lat, group = group), 
+                         colour = "black") + 
+            geom_polygon(data = fortify(shapefile_grid_estudo), 
+                         aes(x = long, y = lat, group = group), 
+                         colour = "#4d4d4d", 
+                         fill = NA) +
+            coord_equal() +
+            scale_x_continuous(labels = comma) +
+            scale_y_continuous(labels = comma) 
+)
+```
+
+## Uma segunda parte do geoprocessamento é o re-escalonamento das variáveis
+
+### Re-escalonamento do SRTM 
+
+```{r geracao_shapefile_SRTM, eval=T, include=T}
+# Esse pedaço de código recebe como entrada o nome do shapefile com dados SRTM,
+# o arquivo raster com os dados SRTM, o shapefile com a grid de estudo e o nome
+# do arquivo em que a grid com os dados SRTM será salva. Caso o arquivo SRTM
+# reescalonado exista, ele é apenas carregado. Caso não exista, os dados SRTM
+# são reescalonados e um arquivo em formato shapefile é gravado no disco.
+#
+# Variáveis de entrada: shapefile_grid_estudo, nome_shapefile_SRTM, nome_raster_dados_SRTM, largura e altura da célula
+# Variáveis de saída: grid_SRTM, "arquivo com os dados SRTM reescalonados"
+
+
+# Estabelecer o nome correto de acordo com o nome do arquivo raster -- no maximo 10 caracteres -- para srtm.
+nome_var_srtm <- c("srtm")
+
+if (file_exists(nome_shapefile_SRTM)){
+  grid_SRTM <- nome_shapefile_SRTM  %>% readOGR(verbose = F,  GDAL1_integer64_policy = T)
+} else {
+  grid_SRTM <- shapefile_grid_estudo %>% 
+    add_raster(nome_raster_dados_SRTM, nome_var_srtm, largura, altura)
+  
+  grid_SRTM@data <- grid_SRTM@data %>%
+    select(c("id_celula", nome_var_srtm) %>% all_of())
+
+  dir_create(path_dir(nome_shapefile_SRTM))
+  writeOGR(grid_SRTM, dsn = nome_shapefile_SRTM, layer=".", driver="ESRI Shapefile")
+}
+
+ggplot() +
+          geom_polygon(data = fortify_join(grid_SRTM),
+                       aes(x = long, y = lat, group = group, fill = srtm)) +
+          coord_equal() +
+          scale_x_continuous(labels = comma) +
+          scale_y_continuous(labels = comma)
+```
+
+### Re-escalonamento das variáveis no presente
+
+```{r geracao_shapefile_presente, eval=T, include=T}
+# Esse pedaço de código recebe como entrada o nome do shapefile com dados
+# abióticos do presente, uma pasta com rasters com os dados abióticos, o
+# shapefile com a grid de estudo, e o nome do arquivo onde as variáveis do
+# presente serão salvas. Caso o arquivo com os dados reescalonados exista, ele é
+# apenas carregado. Caso não exista, os dados abióticos são reescalonados e um
+# arquivo em formato shapefile é gravado no disco.
+#
+# Variáveis de entrada: shapefile_grid_estudo, nome_shapefile_presente, arquivos_raster_presente
+# Variáveis de saída: grid_variaveis_presente, "arquivo com os dados do presente das variáveis reescalonadas"
+
+# Estabelecer o nome correto de acordo com o nome do arquivo raster -- no maximo 10 cracteres -- para as variáveis.
+nomes_variaveis_presente <- c("bio_01", "bio_02", "bio_03",  "bio_04","bio_05", "bio_06", "bio_07", "bio_08", "bio_09", "bio_10", "bio_11", "bio_12", "bio_13", "bio_14", "bio_15", "bio_16", "bio_17", "bio_18", "bio_19")
+
+if (file_exists(nome_shapefile_presente)){
+  grid_variaveis_presente <- readOGR(nome_shapefile_presente, verbose = FALSE, GDAL1_integer64_policy = T)
+} else{
+  arquivos_raster_presente <- list.files(path(pasta_dados_presente), full.names=TRUE) 
+
+  grid_variaveis_presente <- shapefile_grid_estudo %>% add_raster(arquivos_raster_presente, nomes_variaveis_presente, largura, altura)
+    
+  grid_variaveis_presente@data <- grid_variaveis_presente@data %>%
+    select(c("id_celula", nomes_variaveis_presente) %>% all_of())
+  
+  dir_create(path_dir(nome_shapefile_presente))
+  writeOGR(grid_variaveis_presente, dsn = nome_shapefile_presente, layer=".", driver="ESRI Shapefile")
+}
+```
+O `mapview` pode ser usado aqui também para verificação do shapefile gerado. A dica é usar o parâmetro `zcol` para que as diferentes variáveis possam ser visualizadas como camadas `mapview(grid_variaveis_presente, zcol=c("bio_01", "bio_02", "bio_03"))`.  
+
+### Re-escalonamento das variáveis futuro
+
+```{r geracao_shapefiles_futuro, eval=T, include=T}
+# Esse pedaço de código recebe como entrada o nome de uma pasta com os
+# shapefiles com dados abióticos do futuro, uma pasta com rasters com os dados
+# abióticos do futuro, o shapefile com a grid de estudo e o nome do arquivo em
+# que os dados do futuro serão salvos. Caso o arquivo com os dados reescalonados
+# não exista, os dados abióticos do futuro são reescalonados e um arquivo em
+# formato shapefile é gravado no disco.
+#
+# Variáveis de entrada: pasta_dados_futuro, pasta_shapefiles_futuro, shapefile_grid_estudo
+# Variáveis de saída: grid_variaveis_presente, "arquivo com os dados do futuro reescalonados"
+
+nomes_variaveis_futuro <-  c("bio_01", "bio_02", "bio_03", "bio_04", "bio_05", "bio_06", "bio_07", "bio_08", "bio_09", "bio_10", "bio_11", "bio_12", "bio_13", "bio_14", "bio_15", "bio_16", "bio_17", "bio_18", "bio_19")
+
+#algumas variaveis bioclimaticas são multiplicadas por 10, devemos voltar ao valor normal
+nomes_variaveis_futuro_x10 <- c() 
+
+if (!dir_exists(pasta_shapefiles_futuro)){
+ dir_create(path(pasta_shapefiles_futuro))
+}
+
+pastas_rasters_futuro <- list.files(path(pasta_dados_futuro))
+for (pasta in pastas_rasters_futuro){
+  if (!dir_exists(path(pasta_shapefiles_futuro, pasta))){
+    arquivos_raster_futuro <- list.files(path(pasta_dados_futuro, pasta), full.names=TRUE)
+    
+    grid_variaveis_futuro <- shapefile_grid_estudo %>% add_raster(arquivos_raster_futuro, nomes_variaveis_presente, largura, altura)
+    grid_variaveis_futuro@data <- grid_variaveis_futuro@data %>%
+    select(c("id_celula", nomes_variaveis_futuro) %>% all_of())
+    
+    grid_variaveis_futuro@data <- grid_variaveis_futuro@data %>% 
+                          mutate_at(nomes_variaveis_futuro_x10, list(~./10))
+    
+    dir_create(path(pasta_shapefiles_futuro, pasta))
+    writeOGR(grid_variaveis_futuro, dsn = path(pasta_shapefiles_futuro, pasta, paste0(pasta, ".shp")), layer=".", driver="ESRI Shapefile")
+    
+    rm(grid_variaveis_futuro)
+    gc()
+  }
+}
+```
+
+
+# Geração da matriz presença/pseudo-ausência
+
+```{r definicao_dados_ocorrencia,  eval=T, include=T}
+nome_especie <- "Plagioscion_squamosissimus"
+projecao_dados_ocorrencia <- "+init=epsg:4326"
+```
+  
+
+## Vizualização dos pontos de ocorrência
+
+É importante notar que a projeção dos pontos de ocorrência é alterada para ficar igual ao da grid é alterada para ficar igual a dos pontos de ocorrência.
+
+```{r apresentacao_pontos_ocorrencia,  eval=T, include=T}
+# Esse pedaço de código recebe como entrada o nome da espécie estudada, a
+# projecao usada nas coordenadas dos dados de ocorrência e a grid de estudo.
+# Caso o arquivo com a matriz exista, ele é simplesmente carregado e nada é mostrado. Caso não
+# exista, um mapa das ocorrências sobre a área de estudo é mostrado.
+#
+# Variáveis de entrada: nome_especie, projecao_dados_ocorrencia, shapefile_grid_estudo
+# Variáveis de saída: -
+
+ocorrencias_especie <- fread(arquivo_ocorrencias_especie)
+ocorrencias_especie$longitude <- as.numeric(as.character(ocorrencias_especie$longitude))
+ocorrencias_especie$latitude <- as.numeric(as.character(ocorrencias_especie$latitude))
+coordinates(ocorrencias_especie) <- ~longitude+latitude
+crs(ocorrencias_especie) <- CRS(projecao_dados_ocorrencia)
+#shapefile_temp <- spTransform(shapefile_grid_estudo, crs(ocorrencias_especie))
+ocorrencias_especie <- spTransform(ocorrencias_especie, crs(shapefile_grid_estudo))
+ggplotly(ggplot() + 
+                geom_polygon(data = fortify(shapefile_grid_estudo), 
+                         aes(x = long, y = lat, group = group), 
+                         colour = "#4d4d4d", 
+                         fill = NA) +
+           geom_point(data = fortify(ocorrencias_especie), aes(x = long, y = lat), color=c("blue")) +
+            coord_equal() +
+            scale_x_continuous(labels = comma) +
+            scale_y_continuous(labels = comma)
+)
+```
+
+
+## Geração a matriz de presença
+
+Geração da matriz para `r nome_especie`. Note-se que aqui, o sistema de referencia dos pontos de ocorrência  é alterado (e os pontos são reprojetados) para ficar igual ao da grid.    
+
+```{r geracao_shapefile_matriz_pa, eval=T, include=T}
+# Esse pedaço de código recebe como entrada o nome da espécie estudada, a
+# projecao usada nas coordenadas dos dados de ocorrência, a grid de estudo e o
+# nome do arquivo shapefile em que a matriz de presença/ausência  é armazenado.
+# Caso o arquivo com a matriz exista, ele é simplesmente carregado. Caso não
+# exista, a matriz de presença/ausência é gerada e um arquivo em formato shapefile é gravado em disco.
+#
+# Variáveis de entrada: nome_especie, projecao_dados_ocorrencia, shapefile_grid_estudo, nome_shapefile_matriz_pa
+# Variáveis de saída: grid_matriz_pa, "arquivo com os dados de ocorrencia"
+
+if (file_exists(nome_shapefile_matriz_pa)){
+  grid_matriz_pa <- readOGR(nome_shapefile_matriz_pa, verbose = FALSE, GDAL1_integer64_policy = T)
+} else {
+  ocorrencias_especie <- fread(arquivo_ocorrencias_especie)
+  ocorrencias_especie$longitude <- as.numeric(as.character(ocorrencias_especie$longitude))
+  ocorrencias_especie$latitude <- as.numeric(as.character(ocorrencias_especie$latitude))
+  coordinates(ocorrencias_especie) <- ~longitude+latitude
+  crs(ocorrencias_especie) <- CRS(projecao_dados_ocorrencia)
+  ocorrencias_especie <- spTransform(ocorrencias_especie, crs(shapefile_grid_estudo))
+  
+  matriz_pa <- as.data.frame(over(shapefile_grid_estudo, ocorrencias_especie))
+  matriz_pa[is.na(matriz_pa)] <- 0
+  matriz_pa[matriz_pa$species==nome_especie, ] <- 1
+  matriz_pa$species <- as.integer(matriz_pa$species)
+  
+  
+  grid_matriz_pa <- shapefile_grid_estudo 
+  grid_matriz_pa@data <-  cbind(id_celula=shapefile_grid_estudo@data[, "id_celula"], matriz_pa)
+  
+  colnames(grid_matriz_pa@data) <- tolower(colnames(grid_matriz_pa@data))
+  dir_create(path_dir(nome_shapefile_matriz_pa))
+  writeOGR(grid_matriz_pa, dsn = nome_shapefile_matriz_pa, layer=".", driver="ESRI Shapefile")
+}
+grid_matriz_pa_temp <- grid_matriz_pa@data
+grid_matriz_pa_temp$id <- rownames(grid_matriz_pa@data)
+
+ggplot() + 
+          geom_polygon(data = fortify_join(grid_matriz_pa), 
+                       aes(x = long, y = lat, group = group, fill = factor(species))) +
+          coord_equal() +
+          scale_fill_manual(labels=c("Ausencia","Presença"), values=c("darkseagreen2", "tomato"), name="") +
+          scale_x_continuous(labels = comma) +
+          scale_y_continuous(labels = comma)
+
+# Numero de célula com presença
+grid_matriz_pa@data %>% filter(species==1) %>% nrow()
+```
+
+# Predição da distribuição da espécie
+```{r}
+# Esse pedaço de código cria um dataframe com todas as variáveis disponíveis no
+# SRTM, com as variáveis do presente, com as variáveis que estão na área de
+# estudo, e com a matriz de presença/ausência da espécie. Como entrada, deve-se
+# fornecer a matriz de presença/ausência, a grid da área de estudo, a grid com o
+# SRTM, e a grid com as variáveis presentes. O nome da coluna com a
+# presença/ausência deve ser estabelecido.
+# 
+# # Variáveis de entrada: nome_var_alvo, grid_matriz_p, shapefile_grid_estudo, grid_SRTM, grid_variaveis_presente
+# # Variáveis de saída: df_predicao_todas_col
+
+nome_var_alvo <- c("species")
+
+df_predicao_todas_col <- grid_matriz_pa@data %>%
+  bind_cols(shapefile_grid_estudo@data %>% select(-id_celula)) %>% 
+  bind_cols(grid_SRTM@data %>% select(-id_celula)) %>% 
+  bind_cols(grid_variaveis_presente@data %>% select(-id_celula))
+
+df_tmp <- df_predicao_todas_col %>% 
+  select(-id_celula, -species) %>%
+  mutate_all(~ scale(.) %>% as.vector)
+
+df_predicao_todas_col <- df_predicao_todas_col %>% 
+  select(id_celula, species) %>% bind_cols(df_tmp)
+```
+
+
+## Preparação das variáveis para avaliação das PCAs
+
+```{r preparar_df_pca,  eval=T, include=T}
+# Esse pedaço de código cria dois dataframes, um com as variáveis hidrológicas e
+# outro com as variáveis ambientais, que serão usados para a PCA. Como entrada,
+# deve-se fornecer o dataframe com todas as variáveis juntadas.
+
+# Variáveis de entrada: df_predicao_todas_col
+# Variáveis de saída: df_pca_bio, df_pca_hidro
+
+nome_var_pca_bio <- c("bio_01", "bio_02", "bio_03", "bio_04", "bio_05", "bio_06", "bio_07", "bio_08", "bio_09", "bio_10", "bio_11", "bio_12", "bio_13", "bio_14", "bio_15", "bio_16", "bio_17", "bio_18", "bio_19") 
+
+nome_var_pca_hidro <- c("frmdn_flow", "strorder") 
+# 
+                        
+                        #"next_do", "length_", "dist_dn", "dist_up", "catch_s", "upland_", "dis_av_", "ord_str", "ord_cla", "ord_flo", "hyriv_i", "hybas_l", "shp_lng")
+
+#("next_do", "main_ri", "length_", "dist_dn", "dist_up", "catch_s", "upland_", "endorhe", "dis_av_", "ord_str", "ord_cla", "ord_flo", "hybas_l", "shp_lng", "shape_leng") #"objectid", "hyriv_i", 
+
+df_pca_bio <- df_predicao_todas_col %>% select(all_of(nome_var_pca_bio))
+df_pca_hidro <- df_predicao_todas_col %>% select(all_of(nome_var_pca_hidro))
+df_pca_todas <- df_pca_hidro %>% bind_cols(df_pca_bio)
+```
+
+## Análise das PCAs das variáveis bioclimáticas
+
+### Gráfico de matriz de correlação bioclimáticas
+```{r  eval=T, include=T}
+# Esse pedaço de código mostra um gráfico de correlação  das variáveis
+# ambientais. Como entrada, deve-se fornecer o dataframe com todas as variáveis
+# ambientais.
+
+# Variáveis de entrada: df_pca_bio
+# Variáveis de saída: --
+
+ggplotly(
+    ggcorrplot(round(cor(df_pca_bio),2), 
+             method = "square", 
+             type="upper", 
+             hc.order=T, 
+             tl.col="black", 
+             tl.srt=45, 
+             lab=T, 
+             lab_size = 2,
+             p.mat = cor_pmat(df_pca_bio))
+  )
+```
+
+
+### PCA das variáveis bioclimáticas
+
+```{r  eval=T, include=T}
+# Esse pedaço de código produz: informações da aplicação da PCA sobre as
+# variáveis; o gráfico scree, o gráfico bidimencional das variáveis, o gráfico
+# de contribuição das variáveis e os valores de broken-stick e  kaiser mean.
+# Como entrada, deve-se fornecer o dataframe com todas as variáveis ambientais.
+
+# Variáveis de entrada: df_pca_bio
+# Variáveis de saída: --
+
+species_pca_bio <- df_pca_bio %>% 
+                  PCA(ncp = 10, graph = F)
+
+# Loadings (i.e. standard coordinates) are not given by FactoMineR's methods. They return principal coordinates.
+# You can calculate them by dividing variables' coordinates on a dimension by this dimension's eigenvalue's square root.
+sweep(species_pca_bio$var$coord,2,sqrt(species_pca_bio$eig[1:ncol(species_pca_bio$var$coord),1]),FUN="/")
+
+fviz_screeplot(species_pca_bio, addlabels = T)
+
+fviz_pca_var(species_pca_bio, col.var="contrib",
+            gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+            repel = TRUE #
+)
+species_pca_bio$var
+
+fviz_contrib(species_pca_bio, choice = "var", axes = 1, top = 10)
+species_pca_bio$eig
+
+#prettyScree(species_pca_bio$eig[,1])
+```
+
+## Análise das variáveis hidrológicas
+
+### Gráfico de matriz de correlação das hidrológicas
+```{r  eval=F, include=T}
+# Esse pedaço de código mostra um gráfico de correlação  das variáveis
+# hidrológicas Como entrada, deve-se fornecer o dataframe com todas as variáveis
+# ambientais.
+
+# Variáveis de entrada: df_pca_hidro
+# Variáveis de saída: --
+
+ggplotly(
+  ggcorrplot(round(cor(df_pca_hidro),2), 
+             method = "square", 
+             type="upper", 
+             hc.order=T, 
+             tl.col="black", 
+             tl.srt=45, 
+             lab=T, 
+             lab_size =2, 
+             p.mat = cor_pmat(df_pca_hidro))
+  )
+
+```
+
+### PCA das variáveis hidrológicas
+```{r  eval=T, include=T}
+# Esse pedaço de código produz: informações da aplicação da PCA sobre as
+# variáveis; o gráfico scree, o gráfico bidimencional das variáveis, o gráfico
+# de contribuição das variáveis e os valores de broken-stick e  kaiser mean.
+# Como entrada, deve-se fornecer o dataframe com todas as variáveis
+# hidrológicas.
+
+# Variáveis de entrada: df_pca_hidro
+# Variáveis de saída: --
+
+species_pca_hidro <- df_pca_hidro %>% 
+                  PCA(ncp = 10, graph = F)
+
+sweep(species_pca_hidro$var$coord,2,sqrt(species_pca_hidro$eig[1:ncol(species_pca_hidro$var$coord),1]),FUN="/")
+
+fviz_screeplot(species_pca_hidro, addlabels = T)
+
+fviz_pca_var(species_pca_hidro, col.var="contrib",
+            gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+            repel = TRUE #
+)
+species_pca_hidro$var
+
+fviz_contrib(species_pca_hidro, choice = "var", axes = 1, top = 10)
+species_pca_hidro$eig
+
+#prettyScree(species_pca_hidro$eig[,1])
+```
+
+
+### PCA de todas as variáveis
+```{r  eval=T, include=T}
+# Esse pedaço de código produz: informações da aplicação da PCA sobre as
+# variáveis; o gráfico scree, o gráfico bidimencional das variáveis, o gráfico
+# de contribuição das variáveis e os valores de broken-stick e  kaiser mean.
+# Como entrada, deve-se fornecer o dataframe com todas as variáveis.
+
+# Variáveis de entrada: df_pca_todas
+# Variáveis de saída: --
+
+species_pca_todas <- df_pca_todas %>% 
+                  PCA(ncp = 10, graph = F)
+
+sweep(species_pca_todas$var$coord,2,sqrt(species_pca_todas$eig[1:ncol(species_pca_todas$var$coord),1]),FUN="/")
+
+fviz_screeplot(species_pca_todas, addlabels = T)
+
+fviz_pca_var(species_pca_todas, col.var="contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE #
+)
+
+species_pca_todas$var
+
+fviz_contrib(species_pca_todas, choice = "var", axes = 1, top = 10)
+species_pca_todas$eig
+
+library(prettyGraphs)
+prettyScree(species_pca_todas$eig[,1])
+```
+
+### VIF das variáveis 
+```{r eval=T, include=T}
+#vif(df_pca_bio)
+vifcor(df_pca_bio, th = 0.5)
+#vifstep(df_pca_bio)
+
+#vif(df_pca_hidro)
+vifcor(df_pca_hidro, th = 0.5)
+#vifstep(df_pca_hidro)
+
+vifcor(df_pca_todas, th = 0.5)
+```
+
+## Avaliação dos modelos de predição
+
+### Preparação das variáveis para os modelos
+
+```{r preparar_df_aval,  eval=T, include=T}
+# Esse pedaço de código produz: um dataframe com as células de presença da
+# espécie; um dataframe com as células com ausência da espécie; e um dtaframe
+  # com presença e ausência; e, um dataframe com pontos de background gerados.
+# Deve-se fornecer também os nomes das variáveis hidrológias e também das
+# variáveis ambientais que serão usadas na predição a partir da análise das
+# informações produzidas pela PCA. informações da aplicação da PCA sobre as
+# variáveis; o gráfico scree, o gráfico bidimencional das variáveis, o gráfico
+# de contribuição das variáveis e os valores de broken-stick e  kaiser mean.
+
+# Variáveis de entrada: nome_var_pred_bio, nome_var_pred_hidro
+# Variáveis de saída: df_presenca, df_ausencia, df_presenca_ausencia, df_background
+
+nome_var_pred_bio <- c("bio_02", "bio_04", "bio_08", "bio_19")
+nome_var_pred_hidro <-   c("frmdn_flow", "strorder")
+nome_var_pred_pca <- c("Dim.1", "Dim.2", "Dim.3", "Dim.4") #"Dim.1", "Dim.2", "Dim.3", "Dim.4"
+
+if (!length(nome_var_pred_pca)>0){
+  df_presenca <- df_predicao_todas_col %>%
+                      filter(.[nome_var_alvo]==1) %>% 
+                      select(all_of(c(nome_var_alvo, nome_var_pred_hidro, nome_var_pred_bio)))
+  
+  df_ausencia <- df_predicao_todas_col %>% 
+                      filter(.[nome_var_alvo]==0) %>% 
+                      select(all_of(c(nome_var_alvo, nome_var_pred_hidro, nome_var_pred_bio)))
+  
+  df_presenca_ausencia <- df_predicao_todas_col %>% 
+                      select(all_of(c("id_celula", nome_var_alvo, nome_var_pred_hidro, nome_var_pred_bio)))
+} else {
+  df_predicao_todas_col <- df_predicao_todas_col %>% 
+                        bind_cols(as.data.frame(species_pca_todas$ind$coord))
+  df_presenca <- df_predicao_todas_col %>%
+                      filter(.[nome_var_alvo]==1) %>% 
+                      select(all_of(c(nome_var_alvo, nome_var_pred_pca)))
+  
+  df_ausencia <- df_predicao_todas_col %>% 
+                      filter(.[nome_var_alvo]==0) %>% 
+                      select(all_of(c(nome_var_alvo, nome_var_pred_pca)))
+  
+  df_presenca_ausencia <- df_predicao_todas_col %>% 
+                      select(all_of(c("id_celula", nome_var_alvo, nome_var_pred_pca)))
+}
+
+df_background <- gerarPseudoAusenciasDRE(shapefile_grid_estudo, df_presenca_ausencia, metodo="k-means") # "k-means" ou "dre_area" ou "dre_dens" ou "random"
+```
+
+
+### Análise dos dados de background
+```{r analise_dados_bg,  eval=T, include=T}
+# Empiricamente um bom valor de perplexity é: P ~ N^1/2
+perp = round((nrow(df_presenca_ausencia) ^ (1/2)), digits=0)
+# manteremos os memos numeros de dimenções mantidas na PCA 
+ini_dim = 2
+df_todas_tsne <- df_presenca_ausencia %>% select(-id_celula) %>% unique()
+tsne_toda_area <- Rtsne(as.matrix(df_todas_tsne %>% select(-species)))
+qplot(tsne_toda_area$Y[,1], tsne_toda_area$Y[,2], geom = "point", colour = (df_todas_tsne$species))
+
+# Empiricamente um bom valor de perplexity é: P ~ N^1/2
+perp = round((nrow(df_presenca %>% bind_rows(df_background)) ^ (1/2)), digits=0)
+# manteremos os memos numeros de dimenções mantidas na PCA 
+ini_dim = 2 
+df_bg_tsne <- rep(0, nrow(df_background)) %>% 
+  as_tibble_col("species") %>%
+  bind_cols(df_background) %>% 
+  bind_rows(df_presenca) 
+
+tsne_bg <- Rtsne(as.matrix(df_bg_tsne %>% select(-species)), perplexity = perp)
+qplot(tsne_bg$Y[,1], tsne_bg$Y[,2], geom = "point", colour = (df_bg_tsne$species))
+```
+
+
+### Ajuste dos dados
+```{r ajuste_dados,  eval=T, include=T}
+# Esse pedaço de código produz um objeto com os dados ajustados prontos para serem usados pelo pacote SDM. Como  entrada deve-se fornecer o dataframe com as presenças e outro dataframe com os dados de background.
+
+# Variáveis de entrada: df_presenca, df_background
+# Variáveis de saída: dados_predicao_presenca
+
+dados_predicao_presenca <- sdmData(as.formula(paste(nome_var_alvo, ".", sep=" ~ ")), train=df_presenca, bg=df_background)
+```
+
+
+### Ajuste e treinamento dos Modelos
+```{r treinamento_modelos, eval=T, include=T}
+# Esse pedaço de código treina e testa os modelos de predição. Caso os modelos já tenham
+# sido treinados anteiormente, eles apenas são carregados. Como entrada devem
+# ser fornecidos o objeto com os dados ajustados, uma lista com os nomes dos
+# métodos, disponíveis no pacote SDM e por nós adicionados, que serão usados
+# para treinar os modelos e, o nome do arquivo em que os modelos treinados serão
+# salvos.
+
+# Variáveis de entrada: dados_predicao_presenca, metodos
+# Variáveis de saída: modelos_treinados, "arquivo com os modelos treinados"
+
+# getmethodNames()
+metodos <- c("bioclim", "bioclim.dismo", "brt", "cart", "fda", "gam", "glm", "glmnet", "mars", "maxent", "maxlike", "mda", "mlp",  "rf", "rpart", "svm", "Mahal", "DEuc_m", "DEuc", "Svm_occ", "Enfa", "domain")
+
+#metodos <- c("bioclim", "bioclim.dismo", "brt", "cart", "fda", "gam", "glm", "glmnet", "mars", "maxent", "maxlike", "mda", "mlp",  "rf", "rpart", "svm", "Mahal", "DEuc_m", "DEuc", "Svm_occ", "Enfa") 
+
+
+if (file_exists(arquivo_modelos_treinados)){
+  modelos_treinados <- readRDS(arquivo_modelos_treinados) 
+} else {
+  suppressWarnings(
+    modelos_treinados <-
+      sdm(
+        data = dados_predicao_presenca,
+        methods = metodos,
+        n = 50,
+        cv.folds = 4,
+        replication = "cv"
+      )
+  )
+  
+  dir_create(path_dir(arquivo_modelos_treinados))
+  saveRDS(modelos_treinados, arquivo_modelos_treinados)
+}
+modelos_treinados
+```
+
+
+### Cálculo e visualização sumarizada dos thresholds
+```{r calculo_thresholds, eval=T, include=T}
+# Esse pedaço de código mostra os valores de thresholds dos modelos treinados e testados. Como entrada devem ser fornecidos os modelos treinados e o critério a ser usado para calcular o threshold.
+
+# Variáveis de entrada: modelos_treinados, metodos, criterio_thres
+# Variáveis de saída: --
+
+
+# 1:sp=se, 2:max(se+sp), 3:min(cost), 4:minROCdist, 5:max(kappa), 6:max(ppv+npv), 7:ppv=npv, 8:max(NMI), 9:max(ccr), 10: prevalence
+criterio_thres <- 2
+
+thresholds_modelos <- getEvaluation(modelos_treinados, stat=c('threshold', 'AUC', 'COR', 'Deviance', 'obs.prevalence', 'sensitivity', 'specificity', 'TSS', 'Kappa', 'NMI', 'phi', 'ppv', 'npv', 'ccr', 'prevalence'), opt=criterio_thres) 
+
+thresholds_modelos
+
+thresholds_media <- getModelInfo(modelos_treinados) %>% 
+                                filter(method %in% metodos) %>%
+                                select(modelID, method) %>% 
+                                inner_join(thresholds_modelos %>% select(modelID, threshold), by="modelID") %>% 
+                                group_by(method) %>% 
+                                summarize(mean = mean(threshold))
+thresholds_media  
+```
+
+
+### Cálculo e visualização sumarizada dos thresholds usando MCC
+```{r calculo_thresholds_mcc, eval=T, include=T}
+#thresholds_modelos_mcc <- calcular_limiar_todos_modelos(modelos_treinados)  
+#thresholds_modelos_mcc
+```
+  
+  
+## Predição da distribuição da espécie usando os melhores modelos
+```{r pred_distribuicao, eval=T, include=T}
+# Esse pedaço de código produz como resultado dois dataframes, um com a predição da espécie mostrada como dado de frequencia e outro com a predição da espécie mostrada como presença/ausência. Caso os arquivos com as predições já existam eles são seimplesmente carregados. Como entrada devem ser fornecidos: os modelos treinados; os melhores metodos de predição; o dataframe com as presenças e pontos de bakground; e, o critério para selecionar o threshold desejado.
+
+# Variáveis de entrada: modelos_treinados, metodos, df_presenca_ausencia, 
+# Variáveis de saída: df_predicao_distr_freq, df_predicao_distr_pa
+
+criterio_thres <- 2
+metodos <- c("bioclim", "domain.dismo", "Mahal", "maxent", "maxlike", "Enfa", "rf", "svm", "glm")
+
+#metodos <- c("bioclim", "bioclim.dismo", "brt", "cart", "fda", "gam", "glm", "glmnet", "mars", "maxent", "maxlike", "mda", "mlp", "rf", "rpart", "svm", "Mahal", "DEuc_m", "DEuc", "Enfa")
+
+if (file_exists(arquivo_distr_esp_freq) && file_exists(arquivo_distr_esp_pa)){
+  df_predicao_distr_freq <- fread(arquivo_distr_esp_freq, sep=";", dec=".")
+  df_predicao_distr_pa <- fread(arquivo_distr_esp_pa, sep=";", dec=".")
+} else {
+  df_predicao_var <- df_presenca_ausencia %>% select(-id_celula)
+
+  df_predicao_distr_freq <- DRE_predict(modelos_treinados, df_predicao_var, metodos, criterio_thres)
+  
+  # Consenso usando frequencia
+  df_predicao_distr_freq <- df_predicao_distr_freq %>% 
+                            mutate(consenso=rowMeans(.))
+  
+  # Consenso usando presenca/ausencia
+  df_predicao_distr_pa <- df_predicao_distr_freq
+  df_predicao_distr_pa[df_predicao_distr_pa<=0.5] <- 0
+  df_predicao_distr_pa[df_predicao_distr_pa>0.5] <- 1
+  df_predicao_distr_pa$consenso <- df_predicao_distr_pa %>% 
+                                      rowMeans(.) %>%
+                                      round(., digits = 0)
+
+  
+  df_predicao_distr_freq <- df_presenca_ausencia %>% 
+                            select(id_celula) %>% 
+                            cbind(df_predicao_distr_freq)
+  
+  df_predicao_distr_pa <- df_presenca_ausencia %>% 
+                            select(id_celula) %>% 
+                            cbind(df_predicao_distr_pa)
+    
+  dir_create(path_dir(arquivo_distr_esp_freq))
+  write.table(
+    df_predicao_distr_freq,
+    file = arquivo_distr_esp_freq,
+    sep = ";",
+    dec = ".",
+    row.names = F
+  )
+  shp_tmp <- shapefile_grid_estudo
+  shp_tmp@data <- shp_tmp@data %>% 
+      bind_cols(df_predicao_distr_freq)
+  writeOGR(
+      shp_tmp, 
+      dsn = paste0(path_ext_remove(arquivo_distr_esp_freq), ".shp"), 
+      layer=".", 
+      driver="ESRI Shapefile"
+  )
+  
+  write.table(
+    df_predicao_distr_pa,
+    file = arquivo_distr_esp_pa,
+    sep = ";",
+    dec = ".",
+    row.names = F
+  )
+  shp_tmp <- shapefile_grid_estudo
+  shp_tmp@data <- shp_tmp@data %>% 
+      bind_cols(df_predicao_distr_pa)
+  writeOGR(
+      shp_tmp, 
+      dsn = paste0(path_ext_remove(arquivo_distr_esp_pa), ".shp"), 
+      layer=".", 
+      driver="ESRI Shapefile"
+  )
+}
+```
+  
+
+### Mapas de Presença/Ausência de cada método
+```{r mapa_frequencia, eval=T, include=T}
+mapaDistrMetodos(df_predicao_distr_pa, shapefile_grid_estudo, metodos)
+```
+
+### Mapa consenso de Presença/Ausência
+```{r mapa_freq_consenso, eval=T, include=T}
+df_predicao_distr_pa <- fread(arquivo_distr_esp_pa, sep=";", dec=".")
+mapa_consenso_pa <- mapaDistrConsenso(df_predicao_distr_pa, shapefile_grid_estudo)
+mapa_consenso_pa
+```
+
+### Mapas de frequência de cada método
+```{r mapa_suit, eval=T, include=T}
+df_predicao_distr_freq <- fread(arquivo_distr_esp_freq, sep=";", dec=".")
+mapaDistrMetodos(df_predicao_distr_freq, shapefile_grid_estudo, metodos)
+```
+
+### Mapa consenso de frequência
+```{r mapa_suit_consenso, eval=T, include=T}
+df_predicao_distr_freq <- fread(arquivo_distr_esp_freq, sep=";", dec=".")
+mapa_consenso_freq <- mapaDistrConsenso(df_predicao_distr_freq, shapefile_grid_estudo)
+mapa_consenso_freq
+```
+
+
+## Teste dos modelos de predição para os cenários futuros
+
+```{r predicao_futura, eval=T, include=T}
+# Esse pedaço de código produz como resultado diversos arquivos, com as predições da espécie mostradas como dado de frequencia e como como presença/ausência. Caso os arquivos com as predições já existam eles são simplesmente carregados. Como entrada devem ser fornecidos: os modelos_treinados, os metodos usados na predição, o dataframe com os dados de presença e background, o nome de uma pasta onde os arquivos com as predições serão gravados e os nomes dos cenários futuros que serão agregados com uma única predição.
+
+# Variáveis de entrada: modelos_treinados, metodos, df_presenca_ausencia, predicao_cenarios_filtro, pasta_shapefiles_futuro
+# Variáveis de saída: "arquivos com as predições"
+
+criterio_thres <- 2
+metodos <- c("bioclim", "domain.dismo", "Mahal", "maxent", "maxlike", "Enfa", "rf", "svm", "glm")
+
+
+if (!dir.exists(path(pasta_distribuicao_futuro))){
+  dir.create(path(pasta_distribuicao_futuro))
+
+  #predicao_cenarios_filtro <- c("4.5_2050", "4.5_2090", "8.5_2090", "8.5_2090")
+  predicao_cenarios_filtro <- c("ssp245_2041-2060", "ssp245_2081-2100", "ssp585_2041-2060", "ssp585_2081-2100")
+  
+  pasta_cenarios <- list()
+  for (i in 1:length(predicao_cenarios_filtro)){
+    pasta_cenarios[[i]] <- list.files(
+                              path(pasta_shapefiles_futuro),
+                              full.names = TRUE,
+                              pattern = paste0("^.*", predicao_cenarios_filtro[i], ".*$")
+                           )
+  }
+  
+  lista_ids_celulas <- df_presenca_ausencia %>%
+                              select(id_celula)
+  i <- 1
+  for (cenarios_pred in pasta_cenarios){
+    cenarios_pred <- unlist(cenarios_pred)
+    nome_pasta_pred <- path(pasta_distribuicao_futuro, predicao_cenarios_filtro[i])
+    if (!dir.exists(path(nome_pasta_pred))){
+      dir.create(path(nome_pasta_pred))
+    }
+    i <- i + 1
+  
+    predicoes_futuro_freq <- list()
+    predicoes_futuro_pa <- list()
+    j <- 1
+    for (cenario in cenarios_pred){
+      if (!length(nome_var_pred_pca)>0){
+        df_predicao_temp <- df_predicao_todas_col %>%
+                                select(c(id_celula, nome_var_alvo, nome_var_pred_hidro)) %>%
+                                    bind_cols(readOGR(cenario, verbose = F, GDAL1_integer64_policy = T)@data %>%
+                                                select(all_of(nome_var_pred_bio)) %>%
+                                                mutate_all(~ scale(.) %>% as.vector)
+                                              )
+      } else {
+        df_pca_temp <- df_predicao_todas_col %>%
+                          select(nome_var_pred_hidro) %>%
+                          bind_cols(readOGR(cenario, verbose = F, GDAL1_integer64_policy = T)@data %>% 
+                                      select(all_of(nome_var_pred_bio)) %>%
+                                      mutate_all(~ scale(.) %>% as.vector)
+                                    )
+        species_pca_temp <- df_pca_temp %>%
+                          PCA(ncp = 10, graph = F)
+        
+        df_predicao_temp <- as.data.frame(species_pca_temp$ind$coord)
+      }
+      
+      pred_esp_freq <- DRE_predict(modelos_treinados, df_predicao_temp, metodos, criterio_thres)
+  
+      colnames(pred_esp_freq) <- metodos
+  
+      # Consenso usando suitability
+      pred_esp_freq$consenso <- pred_esp_freq %>%
+                                  rowMeans(.)
+  
+      # Consenso usando frequencia
+      pred_esp_pa <- pred_esp_freq %>% select(-consenso)
+      pred_esp_pa[pred_esp_pa<=0.5] <- 0
+      pred_esp_pa[pred_esp_pa>0.5] <- 1
+  
+      pred_esp_pa$consenso <- pred_esp_pa %>%
+                                          rowMeans(.) %>%
+                                          round(., digits = 0)
+  
+      predicoes_futuro_freq[[j]] <- pred_esp_freq
+      predicoes_futuro_pa[[j]] <- pred_esp_pa
+      j <- j + 1
+    }
+  
+    grid_temp_freq <- data.frame(row.names = 1:nrow(shapefile_grid_estudo))
+    grid_temp_pa <- data.frame(row.names = 1:nrow(shapefile_grid_estudo))
+    for (k in 1:length(predicoes_futuro_freq)){
+      grid_temp_freq[[k]] <- predicoes_futuro_freq[[k]]$consenso
+      grid_temp_pa[[k]] <- predicoes_futuro_pa[[k]]$consenso
+    }
+    colnames(grid_temp_freq) <- substr(path_file(cenarios_pred), 1, 6)
+    colnames(grid_temp_pa) <- substr(path_file(cenarios_pred), 1 ,6)
+  
+    grid_temp_freq$consenso <- grid_temp_freq %>%
+                                        rowMeans(.)
+    grid_temp_pa$consenso <- grid_temp_pa %>%
+                                        rowMeans(.) %>%
+                                        round(., digits = 0)
+  
+  
+    grid_temp_freq <- lista_ids_celulas %>%
+                              cbind(grid_temp_freq)
+  
+    grid_temp_pa <- lista_ids_celulas %>%
+                              cbind(grid_temp_pa)
+  
+    dir_create(path_dir(nome_pasta_pred))
+    write.table(
+      grid_temp_freq,
+      file = path(nome_pasta_pred, paste0("freq_cenarios.txt")),
+      sep = ";",
+      dec = ".",
+      row.names = F
+    )
+    shp_tmp <- shapefile_grid_estudo
+    shp_tmp@data <- shp_tmp@data %>% 
+      bind_cols(grid_temp_freq)
+    writeOGR(
+        shp_tmp, 
+        dsn = path(nome_pasta_pred, paste0("freq_cenarios.shp")),
+        layer=".", 
+        driver="ESRI Shapefile"
+    )
+  
+    write.table(
+      grid_temp_pa,
+      file = path(nome_pasta_pred, paste0("pa_cenarios.txt")),
+      sep = ";",
+      dec = ".",
+      row.names = F
+    )
+    shp_tmp <- shapefile_grid_estudo
+    shp_tmp@data <- shp_tmp@data %>% 
+      bind_cols(grid_temp_pa)
+    writeOGR(
+        shp_tmp, 
+        dsn = path(nome_pasta_pred, paste0("pa_cenarios.shp")), 
+        layer=".", 
+        driver="ESRI Shapefile"
+    )
+  
+  
+    grid_temp_freq <- data.frame(row.names = 1:nrow(shapefile_grid_estudo))
+    grid_temp_pa <- data.frame(row.names = 1:nrow(shapefile_grid_estudo))
+    for (nome_metodo in metodos){
+      df_temp_pa <- data.frame(row.names = 1:nrow(shapefile_grid_estudo))
+      df_temp_freq <- data.frame(row.names = 1:nrow(shapefile_grid_estudo))
+      for (k in 1:length(predicoes_futuro_freq)){
+        df_temp_freq[[k]] <- predicoes_futuro_freq[[k]][[nome_metodo]]
+        df_temp_pa[[k]] <- predicoes_futuro_pa[[k]][[nome_metodo]]
+      }
+      colnames(df_temp_freq) <- substr(path_file(cenarios_pred), 1, 6)
+      colnames(df_temp_pa) <- substr(path_file(cenarios_pred), 1 ,6)
+      df_temp_freq$consenso <- df_temp_freq %>%
+                                        rowMeans(.)
+  
+      df_temp_pa$consenso <- df_temp_pa %>%
+                                        rowMeans(.) %>%
+                                        round(., digits = 0)
+  
+      grid_temp_freq[[nome_metodo]] <- df_temp_freq$consenso
+      grid_temp_pa[[nome_metodo]] <- df_temp_pa$consenso
+    }
+
+    grid_temp_freq$consenso <- grid_temp_freq %>%
+                                        rowMeans(.)
+    grid_temp_pa$consenso <- grid_temp_pa %>%
+                                        rowMeans(.) %>%
+                                        round(., digits = 0)
+  
+    grid_temp_freq <- lista_ids_celulas %>%
+                              cbind(grid_temp_freq)
+  
+    grid_temp_pa <- lista_ids_celulas %>%
+                              cbind(grid_temp_pa)
+  
+    dir_create(path_dir(nome_pasta_pred))
+    write.table(
+      grid_temp_freq,
+      file = path(nome_pasta_pred, paste0("freq_alg.txt")),
+      sep = ";",
+      dec = ".",
+      row.names = F
+    )
+    shp_tmp <- shapefile_grid_estudo
+    shp_tmp@data <- shp_tmp@data %>% 
+      bind_cols(grid_temp_freq)
+    writeOGR(
+        shp_tmp, 
+        dsn = path(nome_pasta_pred, paste0("freq_alg.shp")), 
+        layer=".", 
+        driver="ESRI Shapefile"
+    )
+    
+    write.table(
+      grid_temp_pa,
+      file = path(nome_pasta_pred, paste0("pa_alg.txt")),
+      sep = ";",
+      dec = ".",
+      row.names = F
+    )
+    shp_tmp <- shapefile_grid_estudo
+    shp_tmp@data <- shp_tmp@data %>% 
+      bind_cols(grid_temp_pa)
+    writeOGR(
+        shp_tmp, 
+        dsn = path(nome_pasta_pred, paste0("pa_alg.shp")), 
+        layer=".", 
+        driver="ESRI Shapefile"
+    )
+  }
+}
+```
+
+
+### Predição para os cenários ssp245_2041-2060
+
+#### Mapas de frequencia dos diferentes métodos dos cenários ssp245_2041-2060
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp245_2041-2060", "freq_alg.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, metodos)
+```
+
+#### Mapas de frequencia dos diferentes cenários ssp245_2041-2060
+```{r eval=T, include=T}
+nomes_modelos_climaticos <- c("CNRM-C", "MIROC6", "MRI-ES")
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp245_2041-2060", "freq_cenarios.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, nomes_modelos_climaticos)
+```
+
+#### Mapa de frequencia de consenso dos cenários ssp245_2041-2060
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp245_2041-2060", "freq_cenarios.txt"), sep=";", dec=".")
+mapa_consenso_freq_4.5_2050 <- mapaDistrConsenso(distr_temp, shapefile_grid_estudo)
+mapa_consenso_freq_4.5_2050
+```
+
+
+#### Mapas de presença/ausência dos diferentes algoritmos dos cenários ssp245_2041-2060
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp245_2041-2060", "pa_alg.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, metodos)
+```
+
+
+#### Mapa de presença/ausência dos diferentes cenários ssp245_2041-2060
+```{r eval=T, include=T}
+nomes_modelos_climaticos <- c("CNRM-C", "MIROC6", "MRI-ES")
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp245_2041-2060", "pa_cenarios.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, nomes_modelos_climaticos)
+```
+
+
+#### Mapa de presença/ausência de consenso dos cenários ssp245_2041-2060
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp245_2041-2060", "pa_cenarios.txt"), sep=";", dec=".")
+mapa_consenso_pa_4.5_2050 <- mapaDistrConsenso(distr_temp, shapefile_grid_estudo)
+mapa_consenso_pa_4.5_2050
+```
+
+
+
+### Predição para os cenários ssp245_2081-2100
+
+#### Mapas de frequencia dos diferentes algoritmos dos cenários ssp245_2081-2100
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp245_2081-2100", "freq_alg.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, metodos)
+```
+
+#### Mapa de frequencia dos diferentes cenários ssp245_2081-2100
+```{r eval=T, include=T}
+nomes_modelos_climaticos <- c("CNRM-C", "MIROC6", "MRI-ES")
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp245_2081-2100", "freq_cenarios.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, nomes_modelos_climaticos)
+```
+
+#### Mapa de frequencia de consenso dos cenários ssp245_2081-2100
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp245_2081-2100", "freq_cenarios.txt"), sep=";", dec=".")
+mapa_consenso_freq_4.5_2080 <- mapaDistrConsenso(distr_temp, shapefile_grid_estudo)
+mapa_consenso_freq_4.5_2080 
+```
+
+#### Mapas de presença/ausencia dos diferentes algoritmos dos cenários ssp245_2081-2100
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp245_2081-2100", "pa_alg.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, metodos)
+```
+
+#### Mapa de presença/ausencia dos diferentes cenários ssp245_2081-2100
+```{r eval=T, include=T}
+nomes_modelos_climaticos <- c("CNRM-C", "MIROC6", "MRI-ES")
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp245_2081-2100", "pa_cenarios.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, nomes_modelos_climaticos)
+```
+
+
+#### Mapa de presença/ausencia de consenso dos cenários ssp245_2081-2100
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp245_2081-2100", "pa_cenarios.txt"), sep=";", dec=".")
+mapa_consenso_pa_4.5_2080 <- mapaDistrConsenso(distr_temp, shapefile_grid_estudo)
+mapa_consenso_pa_4.5_2080
+```
+
+
+### Predição para os cenários ssp585_2041-2060
+
+#### Mapas de frequencia dos diferentes algoritmos dos cenários ssp585_2041-2060
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp585_2041-2060", "freq_alg.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, metodos)
+```
+
+#### Mapa de frequencia dos diferentes cenários ssp585_2041-2060
+```{r eval=T, include=T}
+nomes_modelos_climaticos <- c("CNRM-C", "MIROC6", "MRI-ES")
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp585_2041-2060", "freq_cenarios.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, nomes_modelos_climaticos)
+```
+
+#### Mapa de frequencia de consenso dos cenários ssp585_2041-2060
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp585_2041-2060", "freq_cenarios.txt"), sep=";", dec=".")
+mapa_consenso_freq_8.5_2050  <- mapaDistrConsenso(distr_temp, shapefile_grid_estudo)
+mapa_consenso_freq_8.5_2050
+```
+
+
+#### Mapas de presença/ausência dos diferentes algoritmos dos cenários ssp585_2041-2060
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp585_2041-2060", "pa_alg.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, metodos)
+```
+
+
+#### Mapa de presença/ausencia dos diferentes cenários ssp585_2041-2060
+```{r eval=T, include=T}
+nomes_modelos_climaticos <- c("CNRM-C", "MIROC6", "MRI-ES")
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp585_2041-2060", "pa_cenarios.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, nomes_modelos_climaticos)
+```
+
+
+#### Mapa de presença/ausência de consenso dos cenários ssp585_2041-2060
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp585_2041-2060", "pa_cenarios.txt"), sep=";", dec=".")
+mapa_consenso_pa_8.5_2050 <- mapaDistrConsenso(distr_temp, shapefile_grid_estudo)
+mapa_consenso_pa_8.5_2050
+```
+
+
+### Predição para os cenários ssp585_2081-2100
+
+#### Mapas de frequencia dos diferentes algoritmos dos cenários ssp585_2081-2100
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp585_2081-2100", "freq_alg.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, metodos)
+```
+
+#### Mapa de frequencia dos diferentes cenários ssp585_2081-2100
+```{r eval=T, include=T}
+nomes_modelos_climaticos <- c("CNRM-C", "MIROC6", "MRI-ES")
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp585_2081-2100", "freq_cenarios.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, nomes_modelos_climaticos)
+```
+
+#### Mapa de frequencia de consenso dos cenários ssp585_2081-2100
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp585_2081-2100", "freq_cenarios.txt"), sep=";", dec=".")
+mapa_consenso_freq_8.5_2080 <- mapaDistrConsenso(distr_temp, shapefile_grid_estudo)
+mapa_consenso_freq_8.5_2080
+```
+
+#### Mapas de presença/ausência dos diferentes algoritmos dos cenários ssp585_2081-2100
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp585_2081-2100", "pa_alg.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, metodos)
+```
+
+
+#### Mapa de presença/ausência dos diferentes cenários ssp585_2081-2100
+```{r eval=T, include=T}
+nomes_modelos_climaticos <- c("CNRM-C", "MIROC6", "MRI-ES")
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp585_2081-2100", "pa_cenarios.txt"), sep=";", dec=".")
+mapaDistrMetodos(distr_temp, shapefile_grid_estudo, nomes_modelos_climaticos)
+```
+
+
+#### Mapa de presença/ausência de consenso dos cenários ssp585_2081-2100
+```{r eval=T, include=T}
+distr_temp <- fread(path(pasta_distribuicao_futuro, "ssp585_2081-2100", "pa_cenarios.txt"), sep=";", dec=".")
+mapa_consenso_pa_8.5_2080 <- mapaDistrConsenso(distr_temp, shapefile_grid_estudo)
+mapa_consenso_pa_8.5_2080
+```
+
+
+```{r eval=T, include=T}
+theme_set(theme_gray())
+plot_grid(mapa_consenso_freq, mapa_consenso_freq_4.5_2050, mapa_consenso_freq_4.5_2080, mapa_consenso_freq_8.5_2050, mapa_consenso_freq_8.5_2080, labels = "AUTO", label_size = 12, ncol=3)
+
+plot_grid(mapa_consenso_pa, mapa_consenso_pa_4.5_2050, mapa_consenso_pa_4.5_2080, mapa_consenso_pa_8.5_2050, mapa_consenso_pa_8.5_2080, labels = "AUTO", label_size = 12, ncol=3)
+
+#ggarrange(mapa_consenso_freq, mapa_consenso_freq_4.5_2050, mapa_consenso_freq_4.5_2080, mapa_consenso_freq_8.5_2050, #mapa_consenso_freq_8.5_2080, labels = c("Distribuição", "4.5_2050", "4.5_2080", "8.5_2050", "8.5_2080"),
+#                    ncol = 2, nrow = 6)
+
+#ggarrange(mapa_consenso_pa, mapa_consenso_pa_4.5_2050, mapa_consenso_pa_4.5_2080, mapa_consenso_pa_8.5_2050, #mapa_consenso_pa_8.5_2080, labels = c("Distribuição", "4.5_2050", "4.5_2080", "8.5_2050", "8.5_2080"),
+#                    ncol = 2, nrow = 6)
+
+
+#plot_grid(mapa_consenso_freq, NULL, mapa_consenso_freq_4.5_2050, mapa_consenso_freq_4.5_2080, mapa_consenso_freq_8.5_2050, mapa_consenso_freq_8.5_2080, labels = c('PRESENTE', ' ', '2050 (RCP 4.5)', '2080 (RCP 4.5)', '2050 (RCP 8.5)', '2080 (RCP 8.5)'), vjust = 0.9, label_size = 12, ncol=2)
+
+#plot_grid(mapa_consenso_freq, NULL, mapa_consenso_freq_4.5_2050, mapa_consenso_freq_4.5_2080, mapa_consenso_freq_8.5_2050, mapa_consenso_freq_8.5_2080, labels = c('A', ' ', 'B', 'C', 'D', 'E'), vjust = 0.9, label_size = 12, ncol=2)
+
+#plot_grid(mapa_consenso_pa, NULL, mapa_consenso_pa_4.5_2050, mapa_consenso_pa_4.5_2080, mapa_consenso_pa_8.5_2050, mapa_consenso_pa_8.5_2080, labels = c('PRESENTE', ' ', '2050 (RCP 4.5)', '2080 (RCP 4.5)', '2050 (RCP 8.5)', '2080 (RCP 8.5)'), vjust = 0.9, label_size = 12, ncol=2)
+
+#mapa_consenso_mylo_2col
+
+# plot_grid(mapa_consenso_freq, labels = 'PRESENTE', vjust = 0.9, label_size = 14)
+# plot_grid(mapa_consenso_freq_4.5_2050, labels = '2050 (RCP 4.5)', vjust = 0.9, label_size = 14)
+# plot_grid(mapa_consenso_freq_4.5_2080, labels = '2080 (RCP 4.5)', vjust = 0.9, label_size = 14)
+# plot_grid(mapa_consenso_freq_8.5_2050, labels = '2050 (RCP 8.5)', vjust = 0.9, label_size = 14)
+# plot_grid(mapa_consenso_freq_8.5_2080, labels = '2080 (RCP 8.5)', vjust = 0.9, label_size = 14)
+
+
+
+
+
+```
+
+# Links e páginas para olhar durante o desenvolvimento do material:
+
+* (https://awesome-r.com/)
+* (https://hautahi.com/rmaps)
+* (https://stackoverflow.com/questions/47171710/create-a-grid-inside-a-shapefile)
+* (https://cran.r-project.org/web/packages/SSDM/SSDM.pdf)
+* (https://geocompr.robinlovelace.net/spatial-operations.html)
+* (https://mgimond.github.io/Spatial/vector-operations-in-r.html)
+* (https://github.com/jeffreyevans/spatialEco)
+* (https://cran.r-project.org/web/packages/magrittr/vignettes/magrittr.html)
+* (https://rdrr.io/github/debangs/RSAGA/man/rsaga.intersect.polygons.html)
+* (https://thebiobucket.blogspot.com/2013/09/batch-downloading-zipped-shapefiles.html)
+* (https://rpubs.com/rural_gis/255550)
+* (https://stackoverflow.com/questions/3647744/intersecting-points-and-polygons-in-r)
+* (https://gis.stackexchange.com/questions/140504/extracting-intersection-areas-in-r)
+* (https://rpubs.com/frousseu/328065)
+* (https://gis.stackexchange.com/questions/287846/extract-data-of-polygon-shape-which-intersect-with-point-shape-r-and-create-data)
+* (https://gis.stackexchange.com/questions/63577/joining-polygons-in-r)
+* (https://www.rspatial.org/spatial/Spatialdata.pdf)
+* (https://cran.r-project.org/web/packages/geomerge/geomerge.pdf)
+* (https://cran.r-project.org/web/packages/sp/vignettes/over.pdf)
+* (https://gis.stackexchange.com/questions/88830/overlay-a-spatial-polygon-with-a-grid-and-check-in-which-grid-element-specific-c/273521)
+* (https://www.rdocumentation.org/packages/mapproj/versions/1.2-5/topics/map.grid)
+* (https://edzer.github.io/sp/)
+* (https://plotly-r.com/maps.html)
+* (https://gis.stackexchange.com/questions/273233/create-spatial-polygon-grid-from-spatial-points-in-r)
+* (https://rdrr.io/cran/sf/man/st_make_grid.html)
+* (https://gist.github.com/lmullen/8375785)
+* (http://zevross.com/blog/2015/03/30/map-and-analyze-raster-data-in-r/)
+* (http://www.leg.ufpr.br/~fernandomayer/palestra/useR-2015/Rmarkdown-rautu.html)
+* (https://stackoverflow.com/questions/1815606/determine-path-of-the-executing-script)
+* (https://cran.r-project.org/web/packages/rprojroot/vignettes/rprojroot.html)
+* (https://github.com/jennybc/here_here)
+* (https://stackoverflow.com/questions/43081791/in-r-find-whether-two-files-differ)
+* (https://googledrive.tidyverse.org/)
+* (https://rspatial.org/sdm/5_sdm_models.html)
+* (http://spatial-ecology.net/dokuwiki/doku.php?id=wiki:spdistr1)
+* (http://spatial-ecology.net/dokuwiki/doku.php?id=wiki:basicrmarkdown)
+* (https://www.nceas.ucsb.edu/~frazier/RSpatialGuides/OverviewCoordinateReferenceSystems.pdf)
+* ('https://geocompr.robinlovelace.net/geometric-operations.html)
+* (https://rspatial.org/sdm/3_sdm_absence-background.html)
+* (https://onlinelibrary.wiley.com/doi/full/10.1111/ddi.12892)
+* (https://rspatial.org/sdm/3_sdm_absence-background.html)
+* (https://geocompr.robinlovelace.net/geometric-operations.html)
+* (http://renatabrandt.github.io/EBC2015/PCA.html)
+* (https://www.datacamp.com/community/tutorials/pca-analysis-r)
+* (http://www.sthda.com/english/wiki/print.php?id=202)
+* (http://www.sthda.com/english/wiki/factoextra-r-package-easy-multivariate-data-analyses-and-elegant-visualization)
+* (https://github.com/pedroeisenlohr/niche_modelling/blob/master/Niche%20modelling_Current%20Climate.R)
+* (http://gsp.humboldt.edu/OLM/R/05_06_PresenceOnlyWithGAMs.html)
+* (https://gist.github.com/johnbaums/3ff4c9aa01032ce21a84672c477a6dfb)
+* (http://www.petrkeil.com/?p=2128)
+* (https://cran.r-project.org/web/packages/hSDM/vignettes/hSDM.html)
+* (https://groups.google.com/forum/#!msg/maxent/CUeI5xT9wTI/i3aibLdDOEYJ)
+* (https://datacarpentry.org/r-raster-vector-geospatial/05-raster-multi-band-in-r/)
+* (https://www.kaggle.com/davidthaler/rastermaster)
+* (https://stackoverflow.com/questions/43612903/how-to-properly-plot-projected-gridded-data-in-ggplot2)
+* (https://www.rdocumentation.org/packages/ggspatial/versions/0.2.1/topics/fortify.Raster)
+* (https://rpubs.com/NataliaMZ/412440)
+* (https://bleutner.github.io/RStoolbox/rstbx-docu/ggR.html)
+* (https://fukamilab.github.io/BIO202/08-A-mapping.html)
+* (https://rpubs.com/m_dev/Intro-to-Spatial-Data-and-ggplot2)
+* (https://stackoverflow.com/questions/36325154/how-to-choose-variable-to-display-in-tooltip-when-using-ggplotly)
+* (https://cran.r-project.org/web/packages/ggspatial/vignettes/ggspatial.html)
+* (http://sillasgonzaga.com/material/curso_visualizacao/apresentacao-de-dados-com-relatorios.html)
+* (https://gis.stackexchange.com/questions/23931/how-to-intersect-lines-and-polygons-in-r)
+* (http://repositorio.unesc.net/bitstream/1/5666/1/Karina%20de%20Oliveira%20Teixeira.pdf)
+* (https://github.com/Model-R/modleR)
+* (https://peerj.com/articles/6678/)
+* (https://journal.r-project.org/archive/2018/RJ-2018-019/RJ-2018-019.pdf)
+* (http://search.r-project.org/library/biomod2/doc/Simple_species_modelling.pdf)
+* (http://www2.unil.ch/biomapper/Presentations.html)
+* (https://cmerow.github.io/RDataScience/)
+* (https://github.com/psesinkclee/biomod2ez)
+* (https://github.com/shandongfx/workshop_maxent_R/blob/master/code/Appendix1_case_study.md)
+* (https://rspatial.org/raster/sdm/7_sdm_NULLmodels.html)
+* (https://damariszurell.github.io/SDM-Intro/)
+* (https://github.com/cran/DOS/blob/master/R/mahal.R)
+* (http://geog.uoregon.edu/bartlein/courses/geog495/lec18.html)
+* (https://stackoverflow.com/questions/18658961/mahalanobis-distance-in-r)
+* (https://stackoverflow.com/questions/29608280/mahalanobis-distance-with-multiple-observations-per-group)
+* (https://stackoverflow.com/questions/34703529/mahalanobis-distance-in-r-between-2-goups)
+* (https://machinelearningmastery.com/pre-process-your-dataset-in-r/)
+* (https://stats.stackexchange.com/questions/297076/one-class-positive-and-unlabeled-classification-r-package)
+* (https://en.wikipedia.org/wiki/Soft_independent_modelling_of_class_analogies)
+* (https://github.com/aldro61/pu-learning)
+* (https://github.com/PengyiYang/AdaSampling/)
+* (http://www.ipb.uni-bonn.de/pdfs/Mack2014Can.pdf)
+* (https://cs.uwaterloo.ca/~s255khan/files/KER_sskmm_final.pdf)
+* (https://scikit-learn.org/stable/modules/outlier_detection.html#outlier-detection)
+* (https://arxiv.org/pdf/1811.04820.pdf)
+* (https://arxiv.org/pdf/1608.06807.pdf)
+* (https://rpubs.com/huanfaChen/grid_from_polygon)
+* (https://eburchfield.github.io/files/7_spatial_data_int_lab.html)
+* (https://towardsdatascience.com/how-to-tune-hyperparameters-of-tsne-7c0596a18868)
+
+
+
+
+
+   
+
+   
